@@ -1,0 +1,12 @@
+scratch/
+results/
+queries*
+__pycache__
+*.pyc
+*.out
+*.pdf
+*.png
+*.bin
+*.txt
+*.log
+
