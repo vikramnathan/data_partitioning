@@ -18,13 +18,19 @@ class PartitionSolver:
         self.num_replicas = None
         self.num_blocks = None
 
+    # Map from region id to the size of that region.
     def set_region_sizes(self, region_sizes):
         assert (len(region_sizes) == max(region_sizes.keys())+1)
+        assert (all(s > 0 for s in region_sizes.values()))
         self.region_sizes = region_sizes
 
+    # Map from query id to the regions it contains
     def set_query_regions(self, regions):
-        assert (len(regions) == max(regions.keys())+1)
-        assert all(r >= 0 for r in regions.keys())
+        assert (len(regions) == max(regions.keys())+1), \
+                "Got %d regions with max key %d" % (len(regions),
+                        max(regions.keys()))
+        assert all(r >= 0 for r in regions.keys()), \
+                "Got negative query id"
         assert all(isinstance(v, list) or isinstance(v, set) for v in
                 regions.values())
         self.query_regions = regions
@@ -117,7 +123,7 @@ class PartitionSolver:
         for k in range(len(self.region_sizes)):
             found = False
             for j in range(self.num_blocks):
-                v = m.getVarByName('r_%d_%d' % (k, j))
+                v = m.getVarByName('r_%d_%d_%d' % (0, k, j))
                 if v.x > 0:
                     # Make sure this region isn't assigned to multiple blocks
                     if k in solution:

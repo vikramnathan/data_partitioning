@@ -1,3 +1,4 @@
+from collections import defaultdict
 import numpy as np
 import argparse
 import sys
@@ -40,13 +41,11 @@ args = parser.parse_args()
 def insert_region_IDs(intersections):
     nregions = len(intersections)
     sizes = {}
-    query_map = {}
+    query_map = defaultdict(list)
     ix = 0
     for qs, size in intersections.items():
         sizes[ix] = size
         for q in qs:
-            if q not in query_map:
-                query_map[q] = []
             query_map[q].append(ix)
         ix += 1
     return query_map, sizes
@@ -82,11 +81,11 @@ def construct_ilp():
     return s
 
 def report(result, assignment=True):
-    print('Objective =', r.objVal, ', MPI gap =', r.relative_gap_to_optimal)
+    print('Objective =', result.objVal, ', MPI gap =', result.relative_gap_to_optimal)
     if assignment:
-        for r, b in r.region_assignment.items():
+        for r, b in result.region_assignment.items():
             print('Region %d => Block %d' % (r, b))
 
 s = construct_ilp()
 r = s.solve(timeout_sec = args.timeout_sec)
-report(r, assignment=True)
+report(r, assignment=False)
