@@ -114,8 +114,10 @@ class PartitionSolver:
         return m
 
     def solve(self, timeout_sec=1000):
+        print('Building model...')
         m = self.build_model() 
         m.setParam('TimeLimit', timeout_sec)
+        print('Solving...')
         m.optimize()
         
         # The solution is a mapping of region ID to block ID

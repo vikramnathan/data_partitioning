@@ -22,11 +22,17 @@ parser.add_argument('--num-blocks',
         type=int,
         default=-1,
         help='Number of blocks to partition data into. If not given, will ' + \
-                'be chosen to make the utilization about 0.5')
+                'be chosen so that the avg utilization is --utilization')
 parser.add_argument('--max-block-size',
         type=int,
         default=-1,
-        help='Max size per block. If set, must be larger than the largest region size')
+        help='Max size per block. If not set, defaults to the number of ' + \
+                'points in the largest region')
+parser.add_argument('--utilization',
+        type=float,
+        default=0.5,
+        help='Target average number of points per block. This is used only ' + \
+                'to determine the number of blocks if --num-blocks is not set')
 parser.add_argument('--replicas',
         type=int,
         default=1,
@@ -37,18 +43,38 @@ parser.add_argument('--timeout-sec',
         help='Number of seconds to run the optimizer for')
 args = parser.parse_args()
 
-
-def insert_region_IDs(intersections):
+# Given a mapping of (tuples of query IDs) -> number of points in that
+# intersection, split it into two maps by giving each region an ID:
+# - a map from query ID to the region IDs 
+# - a map from region ID to the number of points in that region.
+# It may be the case that the size of a region is larger than the max allowed
+# bock size (unlimited if set to the default). In this case, a single
+# region may be split into multiple regions with size max_size, plus another
+# region with any remaining points.
+def insert_region_IDs(intersections, max_size=-1):
+    if max_size < -1:
+        # By default, there is no maximum region size.
+        max_size = sys.maxint
     nregions = len(intersections)
     sizes = {}
     query_map = defaultdict(list)
     ix = 0
+    # Some regions are larger than the maxmimum block size. In this case,
+    # greedily put as much as possible into a single block, and just send the
+    # remainder to the solver.
+    preassigned_blocks = defaultdict(int)
     for qs, size in intersections.items():
-        sizes[ix] = size
-        for q in qs:
-            query_map[q].append(ix)
-        ix += 1
-    return query_map, sizes
+        pts_left = size
+        while pts_left > max_size:
+            preassigned_blocks[qs] += 1
+            pts_left -= max_size
+        if pts_left > 0:
+            sizes[ix] = pts_left
+            for q in qs:
+                query_map[q].append(ix)
+            ix += 1
+
+    return query_map, sizes, preassigned_blocks
 
 def plot_cdf(intersections):
     xs = list(sorted(intersections.values()))
@@ -60,32 +86,36 @@ def construct_ilp():
     #intscts, max_id = intersections.build_point_map_inmemory(args.query_dir)
     intscts, max_id = intersections.Inverter(args.query_dir,
             args.work_dir).run()
-    query_map, sizes = insert_region_IDs(intscts)
+    query_map, sizes, preassigned = insert_region_IDs(intscts, max_size=args.max_block_size)
     s = solver.PartitionSolver()
     s.set_region_sizes(sizes)
     s.set_query_regions(query_map)
     s.set_num_replicas(args.replicas)
     
     max_region_size = max(sizes.values())
-    if args.max_block_size > 0 and args.max_block_size < max_region_size:
-        print('Warning: --max-block-size set to %d, which is less ' + \
-                'than the largest region size (%d). Adjusting...' % \
-                (args.max_block_size, max_region_size))
     block_size = max(args.max_block_size, max_region_size)
     s.set_max_block_size(block_size)
     
     nblocks = args.num_blocks
+    # If not set, the number of blocks is determined by taking the regions that
+    # need to still be assigned, and aiming for the given utilization.
     if nblocks < 0:
-        nblocks = int(1 + sum(sizes.values()) * 2. / block_size) 
+        nblocks = int(1 + sum(sizes.values()) / args.utilization / block_size) 
     s.set_num_blocks(nblocks)
-    return s
+    print('%d blocks preassigned' % sum(preassigned.values()))
+    return s, preassigned
 
-def report(result, assignment=True):
-    print('Objective =', result.objVal, ', MPI gap =', result.relative_gap_to_optimal)
+def report(result, preassignment, print_assignment=True):
+    print('Solver Objective =', result.objVal, ', MPI gap =', result.relative_gap_to_optimal)
     if assignment:
         for r, b in result.region_assignment.items():
             print('Region %d => Block %d' % (r, b))
+    num_blocks_accessed = int(result.objVal)
+    # We have to add the blocks that are preassigned.
+    for qs, b in preassignment.items():
+        num_blocks_accessed += len(qs) * b
+    print('Total # blocks accessed:', num_blocks_accessed)
 
-s = construct_ilp()
+s, preassigned = construct_ilp()
 r = s.solve(timeout_sec = args.timeout_sec)
-report(r, assignment=False)
+report(r, preassigned, print_assignment=False)
