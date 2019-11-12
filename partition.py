@@ -8,6 +8,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import solver
 import intersections
+import greedy_cover_heuristic as gch
 
 parser = argparse.ArgumentParser('Compute Intersections')
 parser.add_argument('--query-dir',
@@ -41,6 +42,10 @@ parser.add_argument('--timeout-sec',
         type=int,
         default=300,
         help='Number of seconds to run the optimizer for')
+parser.add_argument('--output-assignment',
+        default='',
+        type=str,
+        help="File to print the region -> block assignments")
 args = parser.parse_args()
 
 # Given a mapping of (tuples of query IDs) -> number of points in that
@@ -82,15 +87,33 @@ def plot_cdf(intersections):
     plt.semilogx(xs, ys, '.', markersize=2)
     plt.savefig('intersection_cdf.pdf')
 
-def construct_ilp():
+def construct_ilp(query_map, sizes, max_block_size, nblocks):
     #intscts, max_id = intersections.build_point_map_inmemory(args.query_dir)
+    return s, preassigned
+
+def report_cost(query_regions, assignment, preassignment):
+    num_blocks_accessed = 0
+    for rs in query_regions.values():
+        blocks = set()
+        for r in rs:
+            blocks.add(assignment[r])
+        num_blocks_accessed += len(blocks)
+    # We have to add the blocks that are preassigned.
+    for qs, b in preassignment.items():
+        num_blocks_accessed += len(qs) * b
+    print('Total # blocks accessed:', num_blocks_accessed)
+
+def write_assignment(assignment, preassignment, region_sizes):
+    with open(args.output_assignment) as out:
+        out.write('# Format: Region ID, Region Size, Block ID\n')
+        for r, b in assignment.items():
+            out.write('%d, %d, %d\n' % (r, region_sizes[r], b)) 
+
+def run_ilp():
     intscts, max_id = intersections.Inverter(args.query_dir,
             args.work_dir).run()
     query_map, sizes, preassigned = insert_region_IDs(intscts, max_size=args.max_block_size)
-    s = solver.PartitionSolver()
-    s.set_region_sizes(sizes)
-    s.set_query_regions(query_map)
-    s.set_num_replicas(args.replicas)
+    print('%d blocks preassigned' % sum(preassigned.values()))
     
     max_region_size = max(sizes.values())
     block_size = max(args.max_block_size, max_region_size)
@@ -100,22 +123,37 @@ def construct_ilp():
     # If not set, the number of blocks is determined by taking the regions that
     # need to still be assigned, and aiming for the given utilization.
     if nblocks < 0:
-        nblocks = int(1 + sum(sizes.values()) / args.utilization / block_size) 
+        nblocks = int(1 + max_id / block_size / args.utilization)
+    # Can't use blocks that were already preassigned.
+    nblocks -= sum(preassigned.values())
+    
+    s = solver.PartitionSolver()
+    s.set_region_sizes(sizes)
+    s.set_query_regions(query_map)
+    s.set_num_replicas(args.replicas)
     s.set_num_blocks(nblocks)
-    print('%d blocks preassigned' % sum(preassigned.values()))
-    return s, preassigned
-
-def report(result, preassignment, print_assignment=True):
+    result = s.solve(timeout_sec = args.timeout_sec)
     print('Solver Objective =', result.objVal, ', MPI gap =', result.relative_gap_to_optimal)
-    if assignment:
-        for r, b in result.region_assignment.items():
-            print('Region %d => Block %d' % (r, b))
-    num_blocks_accessed = int(result.objVal)
-    # We have to add the blocks that are preassigned.
-    for qs, b in preassignment.items():
-        num_blocks_accessed += len(qs) * b
-    print('Total # blocks accessed:', num_blocks_accessed)
+    if len(args.output_assignment) > 0:
+        write_assignment(result.region_assignment, preassigned, sizes)
+    report_cost(query_map, result.region_assignment, preassigned)
 
-s, preassigned = construct_ilp()
-r = s.solve(timeout_sec = args.timeout_sec)
-report(r, preassigned, print_assignment=False)
+def run_greedy_cover():
+    intscts, max_id = intersections.Inverter(args.query_dir,
+            args.work_dir).run()
+    query_map, sizes, preassigned = insert_region_IDs(intscts, max_size=args.max_block_size)
+    if args.max_block_size < 0:
+        print('Must specify max_block_size')
+        sys.exit(1)
+    nblocks = args.num_blocks
+    if nblocks < 0:
+        nblocks = int(1 + max_id / args.max_block_size / args.utilization)
+    # Can't use the blocks that were already preassigned.
+    nblocks -= sum(preassigned.values())
+
+    g = gch.GreedyCoverHeuristic(query_map, sizes, nblocks, args.max_block_size)
+    asst = g.solve()
+    report_cost(query_map, asst, preassigned)
+
+run_greedy_cover()
+
