@@ -9,15 +9,24 @@ import matplotlib.pyplot as plt
 import solver
 import intersections
 import greedy_cover_heuristic as gch
+import rowkey_partition_baseline as rpb
+
+ALGS = [ "ilp", "greedy", "rowkey" ]
+# Folder under which all work dirs live
+WORK_DIR_BASE = 'scratch'
 
 parser = argparse.ArgumentParser('Compute Intersections')
 parser.add_argument('--query-dir',
         type=str,
         required=True,
         help='Directories with one file per query with the list of record IDs matching that query (binary)')
+parser.add_argument('--alg',
+        required=True,
+        choices=ALGS,
+        help="Algorithm to run")
 parser.add_argument('--work-dir',
         type=str,
-        default='.cmp_intr_work_dir',
+        default='tmp_work_dir',
         help='Scratch directory into which intermediate results will be stored')
 parser.add_argument('--num-blocks',
         type=int,
@@ -46,6 +55,7 @@ parser.add_argument('--output-assignment',
         default='',
         type=str,
         help="File to print the region -> block assignments")
+
 args = parser.parse_args()
 
 # Given a mapping of (tuples of query IDs) -> number of points in that
@@ -110,8 +120,9 @@ def write_assignment(assignment, preassignment, region_sizes):
             out.write('%d, %d, %d\n' % (r, region_sizes[r], b)) 
 
 def run_ilp():
+    work_dir = os.path.join(WORK_DIR_BASE, args.work_dir)
     intscts, max_id = intersections.Inverter(args.query_dir,
-            args.work_dir).run()
+            work_dir).run()
     query_map, sizes, preassigned = insert_region_IDs(intscts, max_size=args.max_block_size)
     print('%d blocks preassigned' % sum(preassigned.values()))
     
@@ -139,8 +150,9 @@ def run_ilp():
     report_cost(query_map, result.region_assignment, preassigned)
 
 def run_greedy_cover():
+    work_dir = os.path.join(WORK_DIR_BASE, args.work_dir)
     intscts, max_id = intersections.Inverter(args.query_dir,
-            args.work_dir).run()
+            work_dir).run()
     query_map, sizes, preassigned = insert_region_IDs(intscts, max_size=args.max_block_size)
     if args.max_block_size < 0:
         print('Must specify max_block_size')
@@ -155,6 +167,12 @@ def run_greedy_cover():
     asst = g.solve()
     report_cost(query_map, asst, preassigned)
 
-run_ilp()
-#run_greedy_cover()
+if args.alg == "ilp":
+    run_ilp()
+elif args.alg == "greedy":
+    run_greedy_cover
+elif args.alg == "rowkey":
+    assert args.max_block_size > 0, "--max-block-size must be set " + \
+            "for rowkey partition baseline"
+    rpb.compute_cost(args.query_dir, args.max_block_size)
 
