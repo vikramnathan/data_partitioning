@@ -11,8 +11,7 @@ pip3 install numpy progress
 If the dataset is too big, you might want to sample the query workloads prior to
 running them. To generate sampled queries:
 ```
-python dedup.py --source-dir=<original query dir> --output-dir=<output
-query_dir> --sample=<sampling ratio>
+python dedup.py --source-dir=<original query dir> --output-dir=<output query_dir> --sample=<sampling ratio>
 ```
 Make sure the output query dir doesn't exist first.
 
@@ -55,8 +54,7 @@ couple ways:
 ## Running
 
 ```
-python partition.py --query-dir --alg={rowkey,greedy,ilp} [ --work-dir ]
-    [ --timeout-sec ] [ --max-block-size ] [ --num-blocks]
+python partition.py --query-dir --alg={rowkey,greedy,ilp} [ --work-dir ] [ --timeout-sec ] [ --max-block-size ] [ --num-blocks]
 ```
 Arguments:
 - `--query-dir` is a directory containing only the query files: one file for each
@@ -74,7 +72,8 @@ be in binary format, with each ID being an int32. It is unpacked with
       queries with the running cover, and expands the cover to include it, stopping
       and starting a new cover when the max block size is reached.
     - 'ilp' runs the ILP solver. 
-- `--work-dir` is a directory with intermediate results. All work dirs are
+- `--work-dir` is a directory with intermediate results of the multicore
+  mapreduce that inverts the queries. All work dirs are
   made subdirectories of the `scratch` directory since it is ignored by git. The work
   dir is also used to cache some results so we don't have to invert the queries
   every time. Use the same work dir on the same query dir to avoid needless recomputation.
