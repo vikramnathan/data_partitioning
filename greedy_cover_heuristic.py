@@ -4,6 +4,7 @@ import os
 import intersections
 import itertools
 from collections import defaultdict
+from progress.bar import ShadyBar
 
 ## Implements a greedy heuristic to solve the region assignment problem.
 # Given a graph where regions are nodes, and edges are weighted by how many
@@ -108,6 +109,7 @@ class GreedyCoverHeuristic:
                 continue
             blck_size = self.vertex_sizes[k]
             for r in self.merged[k]:
+                assert r not in asst
                 asst[r] = block_ix
             # Packing heuristic to pack some of the small groups in the same
             # block, preferring larger ones.
@@ -116,7 +118,10 @@ class GreedyCoverHeuristic:
                     continue
                 grp = keys[i_back]
                 if blck_size + self.vertex_sizes[grp] <= self.block_size:
-                    asst[grp] = block_ix
+                    for r in self.merged[grp]:
+                        assert r not in asst
+                        asst[r] = block_ix
+                    print('Adding', self.merged[grp], 'to', self.merged[k])
                     done.add(grp)
                     blck_size += self.vertex_sizes[grp]
             block_ix += 1
@@ -147,6 +152,8 @@ class GreedyCoverHeuristic:
     
     def solve(self):
         cur_v = None
+        bar = ShadyBar('Running Greedy Cover heuristic', max=self.num_vertices,
+                suffix='%(percent)d%%')
         # Use the max weight edge as a starting point
         while self.num_vertices > 0:
             if cur_v is None:
@@ -162,10 +169,10 @@ class GreedyCoverHeuristic:
             # that fits within a block.
             found = False
             for n, w in nbrs:
+                assert self.edges[n] is not None
                 if self.vertex_sizes[cur_v] + self.vertex_sizes[n] <= \
                         self.block_size:
                     # Merge cur_v and n
-                    print('Merging nodes %d and %d' % (cur_v, n))
                     cur_v = self.merge_nodes(cur_v, n)
                     found = True
                     break
@@ -174,6 +181,8 @@ class GreedyCoverHeuristic:
                 self.remove_node(cur_v)
                 cur_v = None
             #self.check_valid()
+            bar.next()
+        bar.finish()
 
         return self.get_assignment()
         

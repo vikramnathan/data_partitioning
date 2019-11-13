@@ -1,5 +1,6 @@
 scratch/
 results/
+one_off/
 queries*
 __pycache__
 *.pyc

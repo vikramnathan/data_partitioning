@@ -121,16 +121,41 @@ class PartitionSolver:
         m.optimize()
         
         # The solution is a mapping of region ID to block ID
+        print('Verifying solution...')
         solution = {}
+        Q = {}
+        R = {}
         for k in range(len(self.region_sizes)):
             found = False
             for j in range(self.num_blocks):
                 v = m.getVarByName('r_%d_%d_%d' % (0, k, j))
-                if v.x > 0:
-                    # Make sure this region isn't assigned to multiple blocks
+                R[k, j] = v.x
+        for i in range(len(self.query_regions)):
+            for j in range(self.num_blocks):
+                v = m.getVarByName('q_0_%d_%d' % (i, j))
+                Q[i, j] = v.x
+        # Verify that the constraints hold
+        for i in range(len(self.query_regions)):
+            for j in range(self.num_blocks):
+                assert sum(R[k,j] for k in self.query_regions[i]) <= \
+                        len(self.query_regions[i]) * Q[i,j], '%d,%d' % (i, j) 
+
+        # Add the constraint that the number of points in each block is less
+        # than the limit.
+        for j in range(self.num_blocks):
+            assert sum(n * R[k,j] for k,n in self.region_sizes.items()) <= \
+                    self.max_block_size, "%d" % j
+
+        # Add the constraint that every region must belong to exactly one block.
+        for k in range(len(self.region_sizes)):
+            assert sum(R[k,j] for j in range(self.num_blocks)) == 1, '%d' % k
+
+        for k in range(len(self.region_sizes)):
+            for j in range(self.num_blocks):
+                if R[k,j] > 0:
                     if k in solution:
                         print('WARNING: Multiple block assignments ' + \
-                                'for region %d' % k)
+                                'for region %d: %d and %d' % (k, solution[k], j))
                     solution[k] = j
                     found = True
             assert (found)

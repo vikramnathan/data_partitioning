@@ -117,7 +117,6 @@ def run_ilp():
     
     max_region_size = max(sizes.values())
     block_size = max(args.max_block_size, max_region_size)
-    s.set_max_block_size(block_size)
     
     nblocks = args.num_blocks
     # If not set, the number of blocks is determined by taking the regions that
@@ -128,6 +127,7 @@ def run_ilp():
     nblocks -= sum(preassigned.values())
     
     s = solver.PartitionSolver()
+    s.set_max_block_size(block_size)
     s.set_region_sizes(sizes)
     s.set_query_regions(query_map)
     s.set_num_replicas(args.replicas)
@@ -155,5 +155,6 @@ def run_greedy_cover():
     asst = g.solve()
     report_cost(query_map, asst, preassigned)
 
-run_greedy_cover()
+run_ilp()
+#run_greedy_cover()
 
