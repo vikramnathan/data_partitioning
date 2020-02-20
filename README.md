@@ -3,8 +3,9 @@
 ## Requirements
 You just need Python 3.x and the following modules:
 ```
-pip3 install numpy progress
+pip3 install numpy progress numpy
 ```
+You'll need to install gurobi to run the ILP solver (gurobi.com). They offer free academic licenses.
 
 ## Sampling
 
